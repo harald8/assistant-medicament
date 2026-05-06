@@ -21,6 +21,7 @@ sdist/
 var/
 data/
 wheels/
+.claude/
 share/python-wheels/
 *.egg-info/
 .installed.cfg
