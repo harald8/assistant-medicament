@@ -9,13 +9,13 @@ CHUNKS_PATH = "index/chunks.json"
 LLM_MODEL = "llama-3.3-70b-versatile"
 
 # Seuil de pertinence pour FAISS (distance L2 — plus petit = plus pertinent)
-SEUIL_CONFIANCE = 1.2
+SEUIL_CONFIANCE = 5.0
 
 # Liste des médicaments du corpus
 MEDICAMENTS = [
     "doliprane", "dafalgan", "efferalgan",
     "ibuprofene", "advil", "nurofen",
-    "aspirin", "aspegic",
+    "aspirine", "aspegic",
     "amoxicilline", "augmentin",
     "smecta", "imodium",
     "ventoline", "becotide",
