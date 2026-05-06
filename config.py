@@ -5,6 +5,9 @@ EMBEDDING_MODEL = "paraphrase-multilingual-mpnet-base-v2"
 INDEX_PATH  = "index/faiss.index"
 CHUNKS_PATH = "index/chunks.json"
 
+# Modèle LLM Groq
+LLM_MODEL = "llama-3.3-70b-versatile"
+
 # Seuil de pertinence pour FAISS (distance L2 — plus petit = plus pertinent)
 SEUIL_CONFIANCE = 1.2
 

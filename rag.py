@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 import os
 
-from config import SEUIL_CONFIANCE, EMBEDDING_MODEL, MEDICAMENTS
+from config import SEUIL_CONFIANCE, EMBEDDING_MODEL, MEDICAMENTS, LLM_MODEL
 
 load_dotenv()
 
@@ -17,7 +17,7 @@ def _get_client() -> Groq:
     return _client
 
 
-# --- Mock retriever — à remplacer dès que Harald livre indexation.py ---
+# --- Mock retriever — replace once Harald delivers indexation.py ---
 _MOCK_DATA = {
     "doliprane": [
         {
@@ -78,29 +78,29 @@ _MOCK_DATA = {
 }
 
 
-def _rechercher_mock(question, _modele, _index, _chunks_avec_meta, k=4):
+def _mock_retriever(question, _model, _index, _chunks_with_meta, k=4):
     question_lower = question.lower()
-    for medicament, chunks in _MOCK_DATA.items():
-        if medicament in question_lower:
+    for medication, chunks in _MOCK_DATA.items():
+        if medication in question_lower:
             return chunks[:k]
-    # Aucun médicament reconnu → score élevé pour déclencher le refus
+    # No medication recognized → high score to trigger refusal
     return [{"contenu": "", "metadata": {"medicament": "", "section": ""}, "score": 9.9}]
 
 
-# Import de la vraie fonction de Harald dès qu'elle est disponible
+# Import Harald's functions once indexation.py is available
 try:
-    from indexation import rechercher, charger_index
+    from indexation import rechercher as retrieve, charger_index as load_index
     _USE_MOCK = False
 except ImportError:
-    rechercher = _rechercher_mock
+    retrieve = _mock_retriever
     _USE_MOCK = True
 
 
 # ---------------------------------------------------------------------------
-# Prompt système
+# System prompt
 # ---------------------------------------------------------------------------
 
-def construire_prompt_systeme() -> str:
+def build_system_prompt() -> str:
     return (
         "Tu es un assistant d'information sur les médicaments. "
         "Tu réponds UNIQUEMENT à partir du contexte fourni entre balises [Source], "
@@ -116,26 +116,26 @@ def construire_prompt_systeme() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Construction du contexte et génération
+# Context assembly and response generation
 # ---------------------------------------------------------------------------
 
-def _assembler_contexte(chunks: list) -> str:
-    parties = []
+def _build_context(chunks: list) -> str:
+    parts = []
     for i, chunk in enumerate(chunks):
-        med = chunk["metadata"]["medicament"]
-        sect = chunk["metadata"]["section"]
-        parties.append(f"[Source {i + 1} — {med} / {sect}]\n{chunk['contenu']}")
-    return "\n\n".join(parties)
+        medication = chunk["metadata"]["medicament"]
+        section = chunk["metadata"]["section"]
+        parts.append(f"[Source {i + 1} — {medication} / {section}]\n{chunk['contenu']}")
+    return "\n\n".join(parts)
 
 
-def generer_reponse(question: str, chunks_pertinents: list) -> str:
-    contexte = _assembler_contexte(chunks_pertinents)
+def generate_response(question: str, relevant_chunks: list) -> str:
+    context = _build_context(relevant_chunks)
     messages = [
-        {"role": "system", "content": construire_prompt_systeme()},
-        {"role": "user", "content": f"Contexte :\n{contexte}\n\nQuestion : {question}"},
+        {"role": "system", "content": build_system_prompt()},
+        {"role": "user", "content": f"Contexte :\n{context}\n\nQuestion : {question}"},
     ]
     response = _get_client().chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model=LLM_MODEL,
         messages=messages,
         max_tokens=800,
     )
@@ -143,40 +143,40 @@ def generer_reponse(question: str, chunks_pertinents: list) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Seuil de pertinence (Bonus B)
+# Relevance threshold (Bonus B)
 # ---------------------------------------------------------------------------
 
-def chunks_sont_pertinents(chunks: list) -> bool:
-    """Distance L2 FAISS : plus petit = plus proche. On rejette si trop grand."""
+def chunks_are_relevant(chunks: list) -> bool:
+    """FAISS L2 distance: smaller = closer. Reject if too large."""
     if not chunks:
         return False
     return chunks[0]["score"] < SEUIL_CONFIANCE
 
 
 # ---------------------------------------------------------------------------
-# Bonus D — comparaison de deux médicaments
+# Bonus D — medication comparison
 # ---------------------------------------------------------------------------
 
-def _detecter_deux_medicaments(question: str):
-    """Retourne (med1, med2) si la question mentionne deux médicaments connus, sinon None."""
-    trouves = [m for m in MEDICAMENTS if m.lower() in question.lower()]
-    if len(trouves) >= 2:
-        return trouves[0], trouves[1]
+def _detect_two_medications(question: str):
+    """Returns (med1, med2) if the question mentions two known medications, else None."""
+    found = [m for m in MEDICAMENTS if m.lower() in question.lower()]
+    if len(found) >= 2:
+        return found[0], found[1]
     return None
 
 
-def _generer_comparaison(
-    question: str, med1: str, med2: str, modele, index, chunks_avec_meta
+def _generate_comparison(
+    question: str, med1: str, med2: str, model, index, chunks_with_meta
 ) -> str:
-    chunks1 = rechercher(med1, modele, index, chunks_avec_meta, k=3)
-    chunks2 = rechercher(med2, modele, index, chunks_avec_meta, k=3)
-    contexte = _assembler_contexte(chunks1 + chunks2)
+    chunks1 = retrieve(med1, model, index, chunks_with_meta, k=3)
+    chunks2 = retrieve(med2, model, index, chunks_with_meta, k=3)
+    context = _build_context(chunks1 + chunks2)
     messages = [
-        {"role": "system", "content": construire_prompt_systeme()},
+        {"role": "system", "content": build_system_prompt()},
         {
             "role": "user",
             "content": (
-                f"Contexte :\n{contexte}\n\n"
+                f"Contexte :\n{context}\n\n"
                 f"Question comparative : {question}\n"
                 f"Fais une synthèse comparative entre {med1} et {med2} "
                 "en te basant uniquement sur le contexte fourni."
@@ -184,7 +184,7 @@ def _generer_comparaison(
         },
     ]
     response = _get_client().chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model=LLM_MODEL,
         messages=messages,
         max_tokens=1000,
     )
@@ -192,7 +192,7 @@ def _generer_comparaison(
 
 
 # ---------------------------------------------------------------------------
-# Interface CLI
+# CLI interface
 # ---------------------------------------------------------------------------
 
 def main():
@@ -200,11 +200,11 @@ def main():
 
     if _USE_MOCK:
         print("[MODE MOCK] indexation.py absent — données de test utilisées.")
-        index, chunks_avec_meta = None, []
+        index, chunks_with_meta = None, []
     else:
-        index, chunks_avec_meta = charger_index()
+        index, chunks_with_meta = load_index()
 
-    modele = SentenceTransformer(EMBEDDING_MODEL)
+    model = SentenceTransformer(EMBEDDING_MODEL)
     print("Système RAG prêt. Tapez 'quit' pour quitter.\n")
 
     while True:
@@ -217,28 +217,26 @@ def main():
         if not question:
             continue
 
-        # Bonus D : comparaison détectée
-        paire = _detecter_deux_medicaments(question)
-        if paire and not _USE_MOCK:
-            med1, med2 = paire
+        # Bonus D: comparison detected
+        pair = _detect_two_medications(question)
+        if pair and not _USE_MOCK:
+            med1, med2 = pair
             print(f"\n[Comparaison : {med1} vs {med2}]\n")
-            reponse = _generer_comparaison(
-                question, med1, med2, modele, index, chunks_avec_meta
-            )
-            print(reponse + "\n")
+            answer = _generate_comparison(question, med1, med2, model, index, chunks_with_meta)
+            print(answer + "\n")
             continue
 
-        chunks = rechercher(question, modele, index, chunks_avec_meta)
+        chunks = retrieve(question, model, index, chunks_with_meta)
 
-        if not chunks_sont_pertinents(chunks):
+        if not chunks_are_relevant(chunks):
             print(
                 "Je n'ai pas trouvé d'information pertinente dans ma base "
                 "pour cette question.\n"
             )
             continue
 
-        reponse = generer_reponse(question, chunks)
-        print("\n" + reponse + "\n")
+        answer = generate_response(question, chunks)
+        print("\n" + answer + "\n")
 
 
 if __name__ == "__main__":
