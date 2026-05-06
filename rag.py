@@ -102,12 +102,17 @@ class MedicamentRAG:
 
     def ask(self, question: str) -> str:
         pair = self._detect_two_medications(question)
-        if pair and not _USE_MOCK:
+        if pair:
             med1, med2 = pair
             print(f"\n[Comparaison : {med1} vs {med2}]\n")
             return self._generate_comparison(question, med1, med2)
 
-        chunks = retrieve(question, self._model, self._index, self._chunks_with_meta)
+        search_query = self._reformulate_query(question)
+        if search_query != question:
+            print(f"[Reformulation : {search_query}]")
+
+        chunks = retrieve(search_query, self._model, self._index, self._chunks_with_meta, k=10)
+        chunks = self._filter_by_medication(question, chunks)
 
         if not self._chunks_are_relevant(chunks):
             return "Je n'ai pas trouvé d'information pertinente dans ma base pour cette question."
@@ -152,6 +157,33 @@ class MedicamentRAG:
         """Returns (med1, med2) if the question mentions two known medications, else None."""
         found = [m for m in MEDICAMENTS if m.lower() in question.lower()]
         return (found[0], found[1]) if len(found) >= 2 else None
+
+    @staticmethod
+    def _filter_by_medication(question: str, chunks: list) -> list:
+        """Garde uniquement les chunks du médicament mentionné dans la question."""
+        mentioned = [m for m in MEDICAMENTS if m.lower() in question.lower()]
+        if not mentioned:
+            return chunks
+        med = mentioned[0]
+        filtered = [c for c in chunks if med.lower() in c["metadata"]["medicament"].lower()]
+        return filtered if filtered else chunks
+
+    def _reformulate_query(self, question: str) -> str:
+        """Bonus C — reformule la question en termes médicaux pour améliorer la recherche."""
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Tu es un assistant qui reformule des questions en mots-clés médicaux précis "
+                    "pour une recherche vectorielle. Réponds uniquement avec les mots-clés, "
+                    "sans phrase ni ponctuation. Exemples : "
+                    "'j ai mal à la tête' → 'céphalées antidouleur posologie', "
+                    "'inconvénients doliprane' → 'doliprane effets indésirables contre-indications'."
+                ),
+            },
+            {"role": "user", "content": question},
+        ]
+        return self._call_llm(messages, max_tokens=30)
 
     def _call_llm(self, messages: list, max_tokens: int) -> str:
         response = self._client.chat.completions.create(

@@ -37,7 +37,7 @@ def decouper_en_chunks(df_filtre):
             
             if texte and texte != "nan" and len(texte) > 50:
                 chunks.append({
-                    "contenu": texte,
+                    "contenu": f"{nom} — {nom_section} : {texte}",
                     "metadata": {
                         "medicament": nom,
                         "section": nom_section
