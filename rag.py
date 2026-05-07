@@ -107,14 +107,12 @@ class MedicamentRAG:
             print(f"\n[Comparaison : {med1} vs {med2}]\n")
             return self._generate_comparison(question, med1, med2)
 
-        effective_question = self._resolve_question(question)
-
-        search_query = self._reformulate_query(effective_question)
-        if search_query != effective_question:
+        search_query = self._reformulate_query(question)
+        if search_query != question:
             print(f"[Reformulation : {search_query}]")
 
         chunks = retrieve(search_query, self._model, self._index, self._chunks_with_meta, k=10)
-        chunks = self._filter_by_medication(effective_question, chunks)
+        chunks = self._filter_by_medication(question, chunks)
         chunks = self._deduplicate_by_section(chunks)
 
         if not self._chunks_are_relevant(chunks):
@@ -130,18 +128,16 @@ class MedicamentRAG:
             print(f"\n[Comparaison : {med1} vs {med2}]\n")
             return self._generate_comparison(question, med1, med2, profile=profile)
 
-        effective_question = self._resolve_question(question)
-
-        search_query = self._reformulate_query(effective_question)
-        if search_query != effective_question:
+        search_query = self._reformulate_query(question)
+        if search_query != question:
             print(f"[Reformulation : {search_query}]")
 
         chunks = retrieve(search_query, self._model, self._index, self._chunks_with_meta, k=10)
-        chunks = self._filter_by_medication(effective_question, chunks)
+        chunks = self._filter_by_medication(question, chunks)
         chunks = self._deduplicate_by_section(chunks)
 
         # Also retrieve prescription-condition chunks for the mentioned medication
-        mentioned = [m for m in MEDICAMENTS if m.lower() in effective_question.lower()]
+        mentioned = [m for m in MEDICAMENTS if m.lower() in question.lower()]
         if mentioned:
             rx_query = f"{mentioned[0]} conditions prescription contre-indications"
             rx_chunks = retrieve(rx_query, self._model, self._index, self._chunks_with_meta, k=5)
@@ -261,35 +257,6 @@ class MedicamentRAG:
             sorted_chunks = sorted(section_chunks, key=lambda c: c["score"])
             result.extend(sorted_chunks[:top_n])
         return result
-
-    def _resolve_question(self, question: str) -> str:
-        """Si aucun médicament n'est cité, en identifie un depuis le symptôme et l'ajoute à la question."""
-        mentioned = [m for m in MEDICAMENTS if m.lower() in question.lower()]
-        if mentioned:
-            return question
-        med = self._identify_medication_for_symptom(question)
-        if med:
-            print(f"[Médicament identifié pour le symptôme : {med}]")
-            return f"{question} — médicament concerné : {med}"
-        return question
-
-    def _identify_medication_for_symptom(self, question: str) -> str | None:
-        """Demande au LLM quel médicament de notre liste correspond au symptôme décrit."""
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    f"Médicaments disponibles : {', '.join(MEDICAMENTS)}.\n"
-                    "L'utilisateur décrit un symptôme. Réponds UNIQUEMENT avec le nom exact "
-                    "d'un médicament de cette liste qui est le plus adapté à ce symptôme, "
-                    "ou 'aucun' si aucun ne convient. Un seul mot, rien d'autre."
-                ),
-            },
-            {"role": "user", "content": question},
-        ]
-        result = self._call_llm(messages, max_tokens=10).strip().lower()
-        matched = [m for m in MEDICAMENTS if m.lower() == result]
-        return matched[0] if matched else None
 
     def _reformulate_query(self, question: str) -> str:
         """Bonus C — reformule la question en termes médicaux pour améliorer la recherche."""
