@@ -26,7 +26,8 @@ def decouper_en_chunks(df_filtre):
         "posologie": "Posologie",
         "contre_indications": "Contre-indications",
         "interactions": "Interactions médicamenteuses",
-        "effets_indesirables": "Effets indésirables"
+        "effets_indesirables": "Effets indésirables",
+        "conditions_prescription": "Conditions de prescription",
     }
     
     for _, ligne in df_filtre.iterrows():
